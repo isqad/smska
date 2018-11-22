@@ -1,3 +1,4 @@
+// https://smska.net/?mode=info&ul=api
 package smska
 
 import (
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -16,15 +18,27 @@ const SmskaApiEndpoint = "https://smska.net/stubs/handler_api.php"
 
 // Possible responses
 const BadKey = `BAD_KEY`
+const BadAction = `BAD_ACTION`
+const BadService = `BAD_SERVICE`
 const ErrorSql = `ERROR_SQL`
+const NoNumbers = `NO_NUMBERS`
+const NoBalance = `NO_BALANCE`
 
 const BalancePat = `ACCESS_BALANCE:([0-9.,]+)`
+const PhonePat = `ACCESS_NUMBER:(.+):(.+)`
+
+// Id - number of operation
+// Phone - phone number
+type SmskaNumber struct {
+	Id    string
+	Phone string
+}
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func GetBalance(balance *string) error {
+func GetBalance(balance *float64) error {
 	smskaApiKey := os.Getenv("SMSKA_API_KEY")
 	action := `getBalance`
 
@@ -34,7 +48,7 @@ func GetBalance(balance *string) error {
 		resp, err := http.Get(url)
 
 		if err != nil {
-			log.Printf("Error: %s", err)
+			log.Fatal(err)
 			return err
 		}
 
@@ -45,13 +59,61 @@ func GetBalance(balance *string) error {
 		serverResponse := string(body[:])
 
 		if serverResponse == BadKey || serverResponse == ErrorSql {
-			log.Printf("Error: %s", serverResponse)
+			log.Fatal(serverResponse)
 			return err
 		}
 
 		re := regexp.MustCompile(BalancePat)
 
-		*balance = re.FindStringSubmatch(serverResponse)[1]
+		money, err := strconv.ParseFloat(re.FindStringSubmatch(serverResponse)[1], 64)
+
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+
+		*balance = money
+
+		return nil
+	})
+}
+
+func GetNumber(service string, smskaNumber *SmskaNumber) error {
+	smskaApiKey := os.Getenv("SMSKA_API_KEY")
+	action := `getNumber`
+
+	url := fmt.Sprintf(`%s?api_key=%s&action=%s&service=%s&operator=any`,
+		SmskaApiEndpoint, smskaApiKey, action, service)
+
+	return retry(MaxRetries, time.Second, func() error {
+		resp, err := http.Get(url)
+
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+
+		defer resp.Body.Close()
+
+		body, _ := ioutil.ReadAll(resp.Body)
+
+		serverResponse := string(body[:])
+
+		if serverResponse == BadKey ||
+			serverResponse == ErrorSql ||
+			serverResponse == BadAction ||
+			serverResponse == NoNumbers ||
+			serverResponse == NoBalance ||
+			serverResponse == BadService {
+			log.Fatal(serverResponse)
+			return err
+		}
+
+		re := regexp.MustCompile(PhonePat)
+
+		result := re.FindStringSubmatch(serverResponse)
+
+		*smskaNumber = SmskaNumber{Id: result[1], Phone: result[2]}
 
 		return nil
 	})
