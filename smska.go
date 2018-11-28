@@ -2,6 +2,7 @@
 package smska
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -19,13 +20,17 @@ const SmskaApiEndpoint = "https://smska.net/stubs/handler_api.php"
 // Possible responses
 const BadKey = `BAD_KEY`
 const BadAction = `BAD_ACTION`
+const NoAction = `NO_ACTION`
 const BadService = `BAD_SERVICE`
 const ErrorSql = `ERROR_SQL`
 const NoNumbers = `NO_NUMBERS`
 const NoBalance = `NO_BALANCE`
 
+const StatusWait = `STATUS_WAIT_CODE`
+
 const BalancePat = `ACCESS_BALANCE:([0-9.,]+)`
 const PhonePat = `ACCESS_NUMBER:(.+):(.+)`
+const ActivationCodePat = `STATUS_OK:(.+)`
 
 // Id - number of operation
 // Phone - phone number
@@ -106,7 +111,7 @@ func GetNumber(service string, smskaNumber *SmskaNumber) error {
 			serverResponse == NoBalance ||
 			serverResponse == BadService {
 			log.Fatal(serverResponse)
-			return err
+			return nil
 		}
 
 		re := regexp.MustCompile(PhonePat)
@@ -117,6 +122,50 @@ func GetNumber(service string, smskaNumber *SmskaNumber) error {
 
 		return nil
 	})
+}
+
+func GetStatus(id string, code *string) error {
+	smskaApiKey := os.Getenv("SMSKA_API_KEY")
+	action := `getStatus`
+
+	url := fmt.Sprintf(`%s?api_key=%s&action=%s&id=%s`, SmskaApiEndpoint, smskaApiKey, action, id)
+
+	return retry(10, 5*time.Second, func() error {
+		resp, err := http.Get(url)
+
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+
+		defer resp.Body.Close()
+
+		body, _ := ioutil.ReadAll(resp.Body)
+
+		serverResponse := string(body[:])
+
+		if serverResponse == BadKey ||
+			serverResponse == ErrorSql ||
+			serverResponse == BadAction {
+			log.Fatal(serverResponse)
+			return nil
+		}
+
+		if serverResponse == StatusWait {
+			log.Print(serverResponse)
+
+			return errors.New(serverResponse)
+		}
+
+		re := regexp.MustCompile(ActivationCodePat)
+
+		result := re.FindStringSubmatch(serverResponse)
+
+		*code = result[1]
+
+		return nil
+	})
+
 }
 
 // https://upgear.io/blog/simple-golang-retry-function/
