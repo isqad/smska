@@ -1,5 +1,9 @@
 # Api for smska.net
 
+## Constraints
+
+Api of Smska.net doesn't allow to retreive full text from sms
+
 ## Usage
 
 ```go
@@ -17,7 +21,7 @@ func main() {
 	smska.GetNumber(`oz`, &phoneNumber)
 	log.Print(phoneNumber)
 
-    // Max retries - 10 every 5 seconds
+    // Max retries - 12 every 1 second
 	smska.GetStatus(phoneNumber.Id, &code)
 	log.Print(code)
 }

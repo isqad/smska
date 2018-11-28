@@ -130,7 +130,7 @@ func GetStatus(id string, code *string) error {
 
 	url := fmt.Sprintf(`%s?api_key=%s&action=%s&id=%s`, SmskaApiEndpoint, smskaApiKey, action, id)
 
-	return retry(10, 5*time.Second, func() error {
+	return retry(12, time.Second, func() error {
 		resp, err := http.Get(url)
 
 		if err != nil {
@@ -144,6 +144,8 @@ func GetStatus(id string, code *string) error {
 
 		serverResponse := string(body[:])
 
+		log.Print(serverResponse)
+
 		if serverResponse == BadKey ||
 			serverResponse == ErrorSql ||
 			serverResponse == BadAction {
@@ -152,14 +154,15 @@ func GetStatus(id string, code *string) error {
 		}
 
 		if serverResponse == StatusWait {
-			log.Print(serverResponse)
-
+			log.Print("Try again...")
 			return errors.New(serverResponse)
 		}
 
 		re := regexp.MustCompile(ActivationCodePat)
 
 		result := re.FindStringSubmatch(serverResponse)
+
+		log.Printf("Got: %s", result)
 
 		*code = result[1]
 
